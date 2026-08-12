@@ -1,5 +1,7 @@
 # mcp profile：三个 MCP Server 的 stdio 连接配置。
 # 不在默认 application.yml 激活，需 -Dspring-boot.run.profiles=mcp 显式打开。
+# 默认值对应本机三个仓库的真实路径，可通过环境变量覆盖（和 Gateway 的
+# ${GATEWAY_URL:...} 同一风格），换机器/换路径时不用改这个文件。
 spring:
   ai:
     mcp:
@@ -10,20 +12,22 @@ spring:
         stdio:
           connections:
             rag-mcp:
-              command: ${RAG_MCP_COMMAND:uv}
-              args: ${RAG_MCP_ARGS:run,python,-m,rag_mcp}
+              command: ${RAG_MCP_COMMAND:python3}
+              args: ${RAG_MCP_ARGS:/Users/chilly/go/src/github.com/chilly-ai-pilot/rag-bootcamp/rag-mcp/mcp_server/server.py}
               env:
-                PYTHONUNBUFFERED: ${RAG_MCP_ENV_PYTHONUNBUFFERED:1}
+                DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:}
+                RAG_CORPUS_DIR: ${RAG_CORPUS_DIR:/Users/chilly/go/src/github.com/chilly-ai-pilot/rag-bootcamp/iteration8/corpus}
+                RAG_CHUNKING_STRATEGY: ${RAG_CHUNKING_STRATEGY:fixed_100_50}
+                RAG_RETRIEVAL_MODE: ${RAG_RETRIEVAL_MODE:hybrid}
+                RAG_RERANK: ${RAG_RERANK:true}
             search-mcp:
-              command: ${SEARCH_MCP_COMMAND:./go-search-mcp}
-              args: ${SEARCH_MCP_ARGS:}
+              command: ${SEARCH_MCP_COMMAND:/Users/chilly/go/src/github.com/chilly-ai-pilot/go-search-mcp/go-search-mcp}
+              args: ${SEARCH_MCP_ARGS:-config,/Users/chilly/go/src/github.com/chilly-ai-pilot/go-search-mcp/mcp-config.json}
               env:
-                SEARCH_API_KEY: ${SEARCH_MCP_ENV_API_KEY:}
+                TAVILY_API_KEY: ${TAVILY_API_KEY:}
             flashcard-mcp:
               command: ${FLASHCARD_MCP_COMMAND:java}
-              args: ${FLASHCARD_MCP_ARGS:-jar,../java-flashcard-mcp/target/flashcard-mcp.jar}
-              env:
-                SPRING_PROFILES_ACTIVE: ${FLASHCARD_MCP_ENV_PROFILE:mcp}
+              args: ${FLASHCARD_MCP_ARGS:-jar,/Users/chilly/go/src/github.com/chilly-ai-pilot/java-flashcard-mcp/target/java-flashcard-mcp-0.0.1-SNAPSHOT.jar}
 
 # 与 spring.ai.mcp.client.stdio.connections 对应的强类型绑定，供应用内代码
 # （日志、诊断、后续校验）引用，而不是直接解析 Spring AI 的内部属性类。
@@ -31,17 +35,19 @@ mcp:
   servers:
     connections:
       rag-mcp:
-        command: ${RAG_MCP_COMMAND:uv}
-        args: ${RAG_MCP_ARGS:run,python,-m,rag_mcp}
+        command: ${RAG_MCP_COMMAND:python3}
+        args: ${RAG_MCP_ARGS:/Users/chilly/go/src/github.com/chilly-ai-pilot/rag-bootcamp/rag-mcp/mcp_server/server.py}
         env:
-          PYTHONUNBUFFERED: ${RAG_MCP_ENV_PYTHONUNBUFFERED:1}
+          DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:}
+          RAG_CORPUS_DIR: ${RAG_CORPUS_DIR:/Users/chilly/go/src/github.com/chilly-ai-pilot/rag-bootcamp/iteration8/corpus}
+          RAG_CHUNKING_STRATEGY: ${RAG_CHUNKING_STRATEGY:fixed_100_50}
+          RAG_RETRIEVAL_MODE: ${RAG_RETRIEVAL_MODE:hybrid}
+          RAG_RERANK: ${RAG_RERANK:true}
       search-mcp:
-        command: ${SEARCH_MCP_COMMAND:./go-search-mcp}
-        args: ${SEARCH_MCP_ARGS:}
+        command: ${SEARCH_MCP_COMMAND:/Users/chilly/go/src/github.com/chilly-ai-pilot/go-search-mcp/go-search-mcp}
+        args: ${SEARCH_MCP_ARGS:-config,/Users/chilly/go/src/github.com/chilly-ai-pilot/go-search-mcp/mcp-config.json}
         env:
-          SEARCH_API_KEY: ${SEARCH_MCP_ENV_API_KEY:}
+          TAVILY_API_KEY: ${TAVILY_API_KEY:}
       flashcard-mcp:
         command: ${FLASHCARD_MCP_COMMAND:java}
-        args: ${FLASHCARD_MCP_ARGS:-jar,../java-flashcard-mcp/target/flashcard-mcp.jar}
-        env:
-          SPRING_PROFILES_ACTIVE: ${FLASHCARD_MCP_ENV_PROFILE:mcp}
+        args: ${FLASHCARD_MCP_ARGS:-jar,/Users/chilly/go/src/github.com/chilly-ai-pilot/java-flashcard-mcp/target/java-flashcard-mcp-0.0.1-SNAPSHOT.jar}
