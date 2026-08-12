@@ -1,0 +1,47 @@
+# mcp profile：三个 MCP Server 的 stdio 连接配置。
+# 不在默认 application.yml 激活，需 -Dspring-boot.run.profiles=mcp 显式打开。
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: true
+        type: SYNC
+        request-timeout: 30s
+        stdio:
+          connections:
+            rag-mcp:
+              command: ${RAG_MCP_COMMAND:uv}
+              args: ${RAG_MCP_ARGS:run,python,-m,rag_mcp}
+              env:
+                PYTHONUNBUFFERED: ${RAG_MCP_ENV_PYTHONUNBUFFERED:1}
+            search-mcp:
+              command: ${SEARCH_MCP_COMMAND:./go-search-mcp}
+              args: ${SEARCH_MCP_ARGS:}
+              env:
+                SEARCH_API_KEY: ${SEARCH_MCP_ENV_API_KEY:}
+            flashcard-mcp:
+              command: ${FLASHCARD_MCP_COMMAND:java}
+              args: ${FLASHCARD_MCP_ARGS:-jar,../java-flashcard-mcp/target/flashcard-mcp.jar}
+              env:
+                SPRING_PROFILES_ACTIVE: ${FLASHCARD_MCP_ENV_PROFILE:mcp}
+
+# 与 spring.ai.mcp.client.stdio.connections 对应的强类型绑定，供应用内代码
+# （日志、诊断、后续校验）引用，而不是直接解析 Spring AI 的内部属性类。
+mcp:
+  servers:
+    connections:
+      rag-mcp:
+        command: ${RAG_MCP_COMMAND:uv}
+        args: ${RAG_MCP_ARGS:run,python,-m,rag_mcp}
+        env:
+          PYTHONUNBUFFERED: ${RAG_MCP_ENV_PYTHONUNBUFFERED:1}
+      search-mcp:
+        command: ${SEARCH_MCP_COMMAND:./go-search-mcp}
+        args: ${SEARCH_MCP_ARGS:}
+        env:
+          SEARCH_API_KEY: ${SEARCH_MCP_ENV_API_KEY:}
+      flashcard-mcp:
+        command: ${FLASHCARD_MCP_COMMAND:java}
+        args: ${FLASHCARD_MCP_ARGS:-jar,../java-flashcard-mcp/target/flashcard-mcp.jar}
+        env:
+          SPRING_PROFILES_ACTIVE: ${FLASHCARD_MCP_ENV_PROFILE:mcp}
