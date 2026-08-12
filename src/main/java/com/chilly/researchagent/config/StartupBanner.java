@@ -44,5 +44,9 @@ public class StartupBanner implements ApplicationRunner {
                 agentProperties.totalTimeoutMs(),
                 agentProperties.maxObservationChars(),
                 mcpClientEnabled ? "ENABLED" : "DISABLED");
+
+        if (mcpClientEnabled) {
+            log.info("mcpConnections=rag-mcp,search-mcp,flashcard-mcp");
+        }
     }
 }

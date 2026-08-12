@@ -1,0 +1,17 @@
+# mcp-test profile：只验证 mcp client 相关 bean 能被正确装配，不测真实连通性。
+#
+# 偏离原方案说明：最初尝试给 command 配假路径
+# （/nonexistent/mcp-server），发现 Spring AI 1.1.8 的
+# McpClientAutoConfiguration#mcpSyncClients 在创建 bean 时会同步调用
+# McpSyncClient#initialize()（阻塞等待子进程握手），假路径导致
+# TimeoutException 并让整个 Spring 上下文加载失败——不是"允许的降级"，
+# 而是测试直接挂掉。按 Iteration1.md Step 2 里写好的回退预案：不配置
+# 任何 connections，只验证 enabled=true 时 auto-config 条件生效、
+# mcpSyncClients（空列表）bean 仍会出现。
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: true
+        type: SYNC
+        request-timeout: 5s
