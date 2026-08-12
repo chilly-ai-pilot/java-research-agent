@@ -122,3 +122,55 @@ Agent config → gateway=http://localhost:8080, model=deepseek-chat,
 ---
 
 方案确认没问题的话，我从 Step 1 开始做，每步跑完验证再进下一步，中间有任何一步的验收不过我停下来跟你说。
+
+---
+
+总结报告
+
+## Iteration 0 总结：项目骨架 + 依赖验证
+
+**目标**：搭一个能编译、能启动、零外部依赖的 Spring Boot 骨架，为后续迭代排除掉"是骨架错了还是环境没就绪"这类噪音。
+
+### 六步做了什么
+
+| 步骤 | 产出 | 关键点 |
+|---|---|---|
+| 1 | `scripts/use-java21.sh` + Maven 目录 | 本机默认 JDK 26，Boot 3.5 不支持；脚本把 `JAVA_HOME` 钉到 21 |
+| 2 | `pom.xml` | Spring Boot 3.5.16 + Spring AI 1.1.8，5 个依赖（web/actuator/openai/mcp-client/test）；`maven-enforcer-plugin` 兜底——忘记 source 脚本时构建第一秒报中文错误，而非启动阶段的 ASM 异常 |
+| 3 | `ResearchAgentApplication.java` + 六个空包 | `config/tool/react/memory/audit/web`，对应 Iteration 1-5 的落地位置 |
+| 4 | `application.yml` | 端口 8081；`spring.ai.mcp.client.enabled: false` 且不配 connections——MCP client 一旦配连接会在启动阶段 fork 三个子进程，Iteration 0 故意不碰 |
+| 5 | `AgentProperties` + `StartupBanner` | 启动时打印 Environment 里**实际生效**的配置值，不是 yml 文件内容 |
+| 6 | `ResearchAgentApplicationTests.java` | 两条核心断言 + 完整验收 |
+
+### 最终验收（6/6 PASS）
+
+1. `mvn -q clean compile` 通过
+2. `mvn -q test`：3 个测试全绿
+3. `mvn spring-boot:run` 启动成功，`pgrep` 确认零子进程、无 DataSource/JDBC/MySQL 日志
+4. `curl localhost:8081/actuator/health` → `UP`
+5. 启动横幅与 yml 逐字段一致
+6. `mvn -v` 确认 JDK 21.0.12
+
+### 这次迭代真正验证的两件事（你选中的那行）
+
+```java
+mcpClientBeansAreAbsent();
+```
+
+对应的两条断言，都做过反证，不是摆设：
+
+- **`OpenAiChatModel` bean 存在** → 证明 Spring AI 装配成功。反证：换成必然不存在的类型查询会抛 `NoSuchBeanDefinitionException`，证明这条断言真的能失败。
+- **上下文里没有 MCP client bean**（`mcpSyncClients`/`mcpAsyncClients` 等四个具体 bean 名）→ 证明 `spring.ai.mcp.client.enabled: false` 确实生效。反证：把该配置临时翻成 `true`，断言真的报错（`Failures: 1`）。
+
+这两条叠加起来是这次迭代最大的产出：**排除了一整类后续故障来源**——Iteration 2 调 Gateway 万一失败，能 100% 确定问题不在 Spring 装配，只会在 Gateway 侧或网络。
+
+### 过程中两个偏离原方案的地方
+
+- 原方案想用 `.mvn/jvm.config` 钉 JDK，实际发现它只传 JVM 参数不能选 JDK，改成脚本设 `JAVA_HOME` + enforcer 硬校验兜底。
+- 原方案想用 `getBeanNamesForType(McpSyncClient.class)` 判断"无 MCP client"，反查字节码发现这是假阳性（实际 bean 类型是 `List<McpSyncClient>`），改成按具体 bean 名断言，并用 `/actuator/beans` 实测核实过。
+
+### 已提交状态
+
+六步 commit 全部保留（`--no-ff` 合并，未 squash），已合入 `main`，工作区干净。
+
+---
