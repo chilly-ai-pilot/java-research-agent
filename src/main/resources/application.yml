@@ -1,0 +1,35 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: java-research-agent
+  ai:
+    openai:
+      base-url: ${GATEWAY_URL:http://localhost:8080}
+      api-key: ${GATEWAY_API_KEY:not-needed} # 真实 key 由 Go Gateway 侧注入，Agent 不持有
+      chat:
+        options:
+          model: ${AGENT_MODEL:deepseek-chat}
+          temperature: 0.1 # ReAct 决策要稳定，不要用默认的 0.7
+    mcp:
+      client:
+        enabled: false # Iteration 1 才打开；这里不配 connections 是双保险
+
+# Iteration 0 只声明结构，真正被读取和使用从 Iteration 3（ReAct 循环）开始
+agent:
+  max-steps: 10
+  step-timeout-ms: 30000
+  total-timeout-ms: 90000
+  max-observation-chars: 2000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.chilly.researchagent: DEBUG
+    org.springframework.ai: INFO
