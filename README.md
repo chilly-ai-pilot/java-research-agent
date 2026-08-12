@@ -21,3 +21,27 @@ source scripts/use-java21.sh
 | java-research-agent | — | 8081 |
 | go-llm-gateway（依赖） | — | 8080 |
 | rag-mcp HTTP（依赖，可选） | — | 8000 |
+
+## 跑测试
+
+默认（无外部依赖，CI 用）：
+
+```bash
+mvn -q test
+```
+
+MCP 集成测试（`McpConnectivityIntegrationTest`）默认 skip。本地跑需要
+python-rag-mcp / go-search-mcp / java-flashcard-mcp 三个 Server + MySQL
+都已就绪（路径见 `application-mcp.yml`，可用环境变量覆盖），然后：
+
+```bash
+export MCP_INTEGRATION=true
+mvn -q test
+```
+
+已知问题：`searchKnowledgeReturnsNonEmptyResult` 和
+`listAllToolsReturnsAllFiveTools` 目前会失败——rag-mcp 首次加载 embedding
+模型时把日志打到 stdout 而非 stderr，污染 JSON-RPC 流；该连接一旦被污染就
+永久失效（含 listTools()），要等 rag-mcp 把这条日志挪到 stderr 才能修，
+不在本仓库范围内。详见 `McpConnectivityIntegrationTest` 的类注释和
+commit dcb0aba。
