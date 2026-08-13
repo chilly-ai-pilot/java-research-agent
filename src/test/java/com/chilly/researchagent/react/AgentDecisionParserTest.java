@@ -39,8 +39,19 @@ class AgentDecisionParserTest {
 
         assertThat(decision.isCallTool()).isTrue();
         assertThat(decision.tool()).isEqualTo("search_knowledge");
-        assertThat(decision.params()).containsEntry("query", "Transformer");
-        assertThat(decision.params()).containsEntry("top_k", 3);
+        assertThat(decision.paramAsString("query")).contains("Transformer");
+        assertThat(decision.paramAsInt("top_k")).contains(3);
+    }
+
+    /** call_tool 缺少 params 时应默认为空 Map。 */
+    @Test
+    void parsesCallToolWithMissingParamsAsEmptyMap() {
+        AgentDecision decision = parser.parse("""
+                {"action":"call_tool","tool":"search_knowledge"}
+                """);
+
+        assertThat(decision.isCallTool()).isTrue();
+        assertThat(decision.params()).isEmpty();
     }
 
     /** markdown json 代码块包裹的内容应能解析。 */
@@ -89,11 +100,60 @@ class AgentDecisionParserTest {
                 .hasMessageContaining("tool");
     }
 
-    /** 畸形 JSON 应抛 DecisionParseException 并附带 raw 预览。 */
+    /** 畸形 JSON 应抛 DecisionParseException，message 不含原文但保留预览字段。 */
     @Test
     void throwsWhenJsonMalformed() {
         assertThatThrownBy(() -> parser.parse("{not json at all"))
                 .isInstanceOf(DecisionParseException.class)
-                .hasMessageContaining("raw:");
+                .hasMessageContaining("raw length=")
+                .hasMessageContaining("preview={not json at all");
+    }
+
+    /** 多个 JSON 对象时应提取第一个完整对象。 */
+    @Test
+    void extractsFirstJsonObjectWhenMultiplePresent() {
+        AgentDecision decision = parser.parse("""
+                {"action":"finish","answer":"first"}
+                以及另一个对象 {"action":"finish","answer":"second"}
+                """);
+
+        assertThat(decision.answer()).isEqualTo("first");
+    }
+
+    /** params 含嵌套对象或字符串中的括号时应正确解析。 */
+    @Test
+    void parsesCallToolWithNestedParams() {
+        AgentDecision decision = parser.parse("""
+                {"action":"call_tool","tool":"search_knowledge","params":{"query":"{a:b}","nested":{"k":"v"}}}
+                """);
+
+        assertThat(decision.isCallTool()).isTrue();
+        assertThat(decision.paramAsString("query")).contains("{a:b}");
+        assertThat(decision.params()).containsKey("nested");
+    }
+
+    /** params 中含 JSON 转义双引号时应正确解析。 */
+    @Test
+    void parsesJsonWithEscapedQuotesInParams() {
+        AgentDecision decision = parser.parse("""
+                {"action":"call_tool","tool":"search_knowledge","params":{"query":"什么是\\"MCP\\"？"}}
+                """);
+
+        assertThat(decision.paramAsString("query")).contains("什么是\"MCP\"？");
+    }
+
+    /** 超长原始文本在 getRawTextPreview() 中应截断到 500 字符。 */
+    @Test
+    void truncatesRawTextTo500CharsInException() {
+        String longRaw = "x".repeat(1000);
+
+        assertThatThrownBy(() -> parser.parse(longRaw))
+                .isInstanceOf(DecisionParseException.class)
+                .hasMessageContaining("raw length=1000")
+                .satisfies(ex -> {
+                    String preview = ((DecisionParseException) ex).getRawTextPreview();
+                    assertThat(preview).hasSize(DecisionConstants.RAW_TEXT_PREVIEW_LIMIT + 3);
+                    assertThat(preview).isEqualTo("x".repeat(DecisionConstants.RAW_TEXT_PREVIEW_LIMIT) + "...");
+                });
     }
 }

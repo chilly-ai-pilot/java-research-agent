@@ -7,5 +7,14 @@ public record AgentProperties(
         int maxSteps,
         long stepTimeoutMs,
         long totalTimeoutMs,
-        int maxObservationChars) {
+        int maxObservationChars,
+        String systemPromptPath) {
+
+    public static final String DEFAULT_SYSTEM_PROMPT_PATH = "prompts/system-react.txt";
+
+    public AgentProperties {
+        if (systemPromptPath == null || systemPromptPath.isBlank()) {
+            systemPromptPath = DEFAULT_SYSTEM_PROMPT_PATH;
+        }
+    }
 }

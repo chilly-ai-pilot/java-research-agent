@@ -1,0 +1,95 @@
+package com.chilly.researchagent.react;
+
+import com.chilly.researchagent.config.AgentProperties;
+import com.chilly.researchagent.tool.ToolRegistry;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * 执行 ReAct 单步：LLM 决策 → 解析 → finish 或 call_tool。
+ */
+@Component
+public class ReActStepExecutor {
+
+    private final GatewayChatService gatewayChatService;
+    private final ToolRegistry toolRegistry;
+    private final AgentDecisionParser decisionParser;
+    private final ReActPromptBuilder promptBuilder;
+    private final AgentProperties agentProperties;
+
+    public ReActStepExecutor(
+            GatewayChatService gatewayChatService,
+            ToolRegistry toolRegistry,
+            AgentDecisionParser decisionParser,
+            ReActPromptBuilder promptBuilder,
+            AgentProperties agentProperties) {
+        this.gatewayChatService = gatewayChatService;
+        this.toolRegistry = toolRegistry;
+        this.decisionParser = decisionParser;
+        this.promptBuilder = promptBuilder;
+        this.agentProperties = agentProperties;
+    }
+
+    /**
+     * 执行一步 ReAct；整步耗时超过 {@code agent.step-timeout-ms} 则抛 {@link StepTimeoutException}。
+     */
+    public StepResult executeOneStep(ReActContext context) {
+        try {
+            return CompletableFuture.supplyAsync(() -> doExecuteOneStep(context))
+                    .get(agentProperties.stepTimeoutMs(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            throw new StepTimeoutException(
+                    "Step exceeded " + agentProperties.stepTimeoutMs() + "ms", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Step execution interrupted", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Step execution failed", cause);
+        }
+    }
+
+    private StepResult doExecuteOneStep(ReActContext context) {
+        String systemPrompt = promptBuilder.buildSystemPrompt();
+        String stepPrompt = promptBuilder.buildStepPrompt(context.steps(), context.userQuestion());
+        String rawDecision = gatewayChatService.chat(systemPrompt, List.of(), stepPrompt);
+        AgentDecision decision = decisionParser.parse(rawDecision);
+
+        if (decision.isFinish()) {
+            return StepResult.finished(decision.answer());
+        }
+
+        if (isDuplicateOfLastStep(context, decision)) {
+            throw new DuplicateToolCallException("检测到重复调用同一工具，任务已终止。");
+        }
+
+        String observation = toolRegistry.callTool(decision.tool(), decision.params());
+        return StepResult.continueWith(truncateObservation(observation), decision);
+    }
+
+    private boolean isDuplicateOfLastStep(ReActContext context, AgentDecision decision) {
+        if (context.steps().isEmpty()) {
+            return false;
+        }
+        ReActStep lastStep = context.steps().get(context.steps().size() - 1);
+        return decision.tool().equals(lastStep.tool())
+                && decision.params().equals(lastStep.params());
+    }
+
+    private String truncateObservation(String observation) {
+        int maxChars = agentProperties.maxObservationChars();
+        if (observation == null || observation.length() <= maxChars) {
+            return observation;
+        }
+        return observation.substring(0, maxChars);
+    }
+}

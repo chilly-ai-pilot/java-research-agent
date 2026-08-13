@@ -22,6 +22,7 @@ agent:
   step-timeout-ms: 30000
   total-timeout-ms: 90000
   max-observation-chars: 2000
+  system-prompt-path: prompts/system-react.txt
 
 management:
   endpoints:

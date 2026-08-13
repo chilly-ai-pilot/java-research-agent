@@ -2,13 +2,8 @@ package com.chilly.researchagent.react;
 
 import com.chilly.researchagent.tool.ToolDescriptor;
 import com.chilly.researchagent.tool.ToolRegistry;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StreamUtils;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -17,27 +12,32 @@ import java.util.List;
 @Component
 public class ReActPromptBuilder {
 
-    private static final String SYSTEM_PROMPT_PATH = "prompts/system-react.txt";
-
     private final ToolRegistry toolRegistry;
-    private final String baseSystemPrompt;
+    private final PromptTemplateLoader templateLoader;
 
-    public ReActPromptBuilder(ToolRegistry toolRegistry) {
+    public ReActPromptBuilder(ToolRegistry toolRegistry, PromptTemplateLoader templateLoader) {
         this.toolRegistry = toolRegistry;
-        this.baseSystemPrompt = loadBaseSystemPrompt();
+        this.templateLoader = templateLoader;
     }
 
     /**
-     * 读取 system-react.txt 并动态拼接当前可用 Tool 列表。
+     * 读取 system prompt 模板并动态拼接当前可用 Tool 列表。
      */
     public String buildSystemPrompt() {
-        StringBuilder prompt = new StringBuilder(baseSystemPrompt.trim());
+        StringBuilder prompt = new StringBuilder(templateLoader.loadSystemPrompt().trim());
+
+        List<ToolDescriptor> tools = toolRegistry.listAllTools();
+        if (tools.isEmpty()) {
+            prompt.append("\n\n当前没有可用的工具，直接回答用户问题。");
+            return prompt.toString();
+        }
+
         prompt.append("\n\n当前已连接的工具（以 MCP 实时列表为准）：\n");
-        for (ToolDescriptor tool : toolRegistry.listAllTools()) {
+        for (ToolDescriptor tool : tools) {
             prompt.append("- ")
                     .append(tool.name())
                     .append(": ")
-                    .append(tool.description() != null ? tool.description() : "")
+                    .append(formatToolDescription(tool.description()))
                     .append('\n');
         }
         return prompt.toString();
@@ -72,14 +72,7 @@ public class ReActPromptBuilder {
         return prompt.toString();
     }
 
-    /**
-     * 从 classpath 加载静态 system prompt 模板。
-     */
-    private String loadBaseSystemPrompt() {
-        try (InputStream inputStream = new ClassPathResource(SYSTEM_PROMPT_PATH).getInputStream()) {
-            return StreamUtils.copyToString(inputStream, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to load " + SYSTEM_PROMPT_PATH, e);
-        }
+    private static String formatToolDescription(String description) {
+        return description != null && !description.isBlank() ? description : "无描述";
     }
 }

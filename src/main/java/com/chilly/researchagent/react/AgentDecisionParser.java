@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,7 +17,7 @@ import java.util.regex.Pattern;
 public class AgentDecisionParser {
 
     private static final Pattern MARKDOWN_JSON_BLOCK =
-            Pattern.compile("```(?:json)?\\s*(\\{.*?\\})\\s*```", Pattern.DOTALL);
+            Pattern.compile("```(?:json)?\\s*(.*?)\\s*```", Pattern.DOTALL);
 
     private final ObjectMapper objectMapper;
 
@@ -40,20 +41,58 @@ public class AgentDecisionParser {
     }
 
     /**
-     * 从原始文本中提取 JSON 字符串（去掉 markdown 包裹或首尾空白）。
+     * 从原始文本中提取 JSON 字符串（去掉 markdown 包裹，再按括号匹配取首个 JSON 对象）。
      */
     private String extractJson(String rawText) {
         String trimmed = rawText.trim();
         Matcher matcher = MARKDOWN_JSON_BLOCK.matcher(trimmed);
         if (matcher.find()) {
-            return matcher.group(1).trim();
+            return extractFirstJsonObject(matcher.group(1).trim());
         }
-        int start = trimmed.indexOf('{');
-        int end = trimmed.lastIndexOf('}');
-        if (start >= 0 && end > start) {
-            return trimmed.substring(start, end + 1);
+        return extractFirstJsonObject(trimmed);
+    }
+
+    /**
+     * 按括号深度匹配提取第一个完整 JSON 对象，避免 {@code lastIndexOf('}')} 在多对象/嵌套场景截错。
+     */
+    private String extractFirstJsonObject(String text) {
+        int start = text.indexOf('{');
+        if (start < 0) {
+            return text;
         }
-        return trimmed;
+
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return text.substring(start, i + 1);
+                }
+            }
+        }
+
+        int end = text.lastIndexOf('}');
+        if (end > start) {
+            return text.substring(start, end + 1);
+        }
+        return text;
     }
 
     /**
@@ -80,7 +119,7 @@ public class AgentDecisionParser {
                 }
                 Object paramsObj = map.get("params");
                 Map<String, Object> params = paramsObj instanceof Map<?, ?> paramsMap
-                        ? castParams(paramsMap)
+                        ? toStringObjectMap(paramsMap, rawText)
                         : Map.of();
                 yield new AgentDecision(action, tool, params, null);
             }
@@ -89,10 +128,19 @@ public class AgentDecisionParser {
     }
 
     /**
-     * 将泛型 Map 转为 {@code Map<String, Object>}。
+     * 将泛型 Map 安全转为 {@code Map<String, Object>}，拒绝非 String 键。
      */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> castParams(Map<?, ?> paramsMap) {
-        return (Map<String, Object>) paramsMap;
+    private Map<String, Object> toStringObjectMap(Map<?, ?> paramsMap, String rawText) {
+        if (paramsMap.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> params = LinkedHashMap.newLinkedHashMap(paramsMap.size());
+        for (Map.Entry<?, ?> entry : paramsMap.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new DecisionParseException("params keys must be strings", rawText, null);
+            }
+            params.put(key, entry.getValue());
+        }
+        return Map.copyOf(params);
     }
 }
