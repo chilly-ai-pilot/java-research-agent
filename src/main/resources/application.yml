@@ -23,6 +23,9 @@ agent:
   total-timeout-ms: 90000
   max-observation-chars: 2000
   system-prompt-path: prompts/system-react.txt
+  memory:
+    max-messages: 20
+    session-ttl-minutes: 60
 
 management:
   endpoints:
