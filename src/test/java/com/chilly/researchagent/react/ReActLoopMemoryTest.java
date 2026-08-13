@@ -3,6 +3,7 @@ package com.chilly.researchagent.react;
 import com.chilly.researchagent.config.AgentProperties;
 import com.chilly.researchagent.memory.ChatMemoryProperties;
 import com.chilly.researchagent.memory.ChatMessage;
+import com.chilly.researchagent.memory.NoOpLongTermMemory;
 import com.chilly.researchagent.memory.SessionChatMemory;
 import com.chilly.researchagent.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,7 +46,7 @@ class ReActLoopMemoryTest {
 
         AgentDecisionParser decisionParser = new AgentDecisionParser(new ObjectMapper());
         ReActPromptBuilder promptBuilder = new ReActPromptBuilder(
-                toolRegistry, new PromptTemplateLoader(defaultAgentProperties()));
+                toolRegistry, new PromptTemplateLoader(defaultAgentProperties()), new NoOpLongTermMemory());
         ReActStepExecutor stepExecutor = new ReActStepExecutor(
                 gatewayChatService,
                 toolRegistry,

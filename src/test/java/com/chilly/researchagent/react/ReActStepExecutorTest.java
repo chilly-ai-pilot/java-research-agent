@@ -1,6 +1,7 @@
 package com.chilly.researchagent.react;
 
 import com.chilly.researchagent.config.AgentProperties;
+import com.chilly.researchagent.memory.NoOpLongTermMemory;
 import com.chilly.researchagent.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +35,8 @@ class ReActStepExecutorTest {
     @BeforeEach
     void setUp() {
         decisionParser = new AgentDecisionParser(new ObjectMapper());
-        promptBuilder = new ReActPromptBuilder(toolRegistry, new PromptTemplateLoader(defaultAgentProperties()));
+        promptBuilder = new ReActPromptBuilder(
+                toolRegistry, new PromptTemplateLoader(defaultAgentProperties()), new NoOpLongTermMemory());
         executor = new ReActStepExecutor(
                 gatewayChatService,
                 toolRegistry,

@@ -73,7 +73,7 @@ public class ReActStepExecutor {
         String stepPrompt = promptBuilder.buildStepPrompt(context.steps(), context.userQuestion());
         traceLogger.logStepStart(context.loopStep(), stepPrompt);
 
-        String systemPrompt = promptBuilder.buildSystemPrompt();
+        String systemPrompt = promptBuilder.buildSystemPrompt(context.sessionId(), context.userQuestion());
         String rawDecision = gatewayChatService.chat(systemPrompt, context.conversationHistory(), stepPrompt);
         AgentDecision decision = decisionParser.parse(rawDecision);
         traceLogger.logLlmDecision(context.loopStep(), rawDecision, decision);

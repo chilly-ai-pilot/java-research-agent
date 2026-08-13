@@ -61,7 +61,7 @@ public class ReActLoop {
         String normalizedSessionId = SessionChatMemory.normalizeSessionId(sessionId);
         List<Message> history = ChatMessageConverter.toSpringAiMessages(
                 chatMemory.getRecent(normalizedSessionId, chatMemoryProperties.maxMessages()));
-        ReActResult result = runLoop(new ReActContext(userQuestion, history));
+        ReActResult result = runLoop(new ReActContext(userQuestion, history, normalizedSessionId));
         persistConversation(normalizedSessionId, userQuestion, result.finalAnswer());
         return result;
     }

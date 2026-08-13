@@ -12,6 +12,7 @@ public class ReActContext {
 
     private final String userQuestion;
     private final List<Message> conversationHistory;
+    private final String sessionId;
     private final List<ReActStep> steps = new ArrayList<>();
     private int loopStep;
 
@@ -19,7 +20,7 @@ public class ReActContext {
      * @param userQuestion 用户原始问题，贯穿整个循环
      */
     public ReActContext(String userQuestion) {
-        this(userQuestion, List.of());
+        this(userQuestion, List.of(), null);
     }
 
     /**
@@ -27,8 +28,23 @@ public class ReActContext {
      * @param conversationHistory  本轮之前的多轮对话（不含当前 userQuestion）
      */
     public ReActContext(String userQuestion, List<Message> conversationHistory) {
+        this(userQuestion, conversationHistory, null);
+    }
+
+    /**
+     * @param userQuestion         用户原始问题，贯穿整个循环
+     * @param conversationHistory  本轮之前的多轮对话（不含当前 userQuestion）
+     * @param sessionId            会话 ID，供长期记忆 recall 使用
+     */
+    public ReActContext(String userQuestion, List<Message> conversationHistory, String sessionId) {
         this.userQuestion = userQuestion;
         this.conversationHistory = conversationHistory == null ? List.of() : List.copyOf(conversationHistory);
+        this.sessionId = sessionId;
+    }
+
+    /** 返回会话 ID（可能为 null，例如单元测试未设置时）。 */
+    public String sessionId() {
+        return sessionId;
     }
 
     /** 返回本轮之前的多轮对话历史。 */

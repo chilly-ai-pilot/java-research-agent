@@ -1,5 +1,6 @@
 package com.chilly.researchagent.react;
 
+import com.chilly.researchagent.memory.LongTermMemory;
 import com.chilly.researchagent.tool.ToolDescriptor;
 import com.chilly.researchagent.tool.ToolRegistry;
 import org.springframework.stereotype.Component;
@@ -12,22 +13,44 @@ import java.util.List;
 @Component
 public class ReActPromptBuilder {
 
+    private static final int LONG_TERM_RECALL_TOP_K = 3;
+    private static final String LONG_TERM_MEMORY_SECTION = "相关历史记忆";
+
     private final ToolRegistry toolRegistry;
     private final PromptTemplateLoader templateLoader;
+    private final LongTermMemory longTermMemory;
 
     /**
      * @param toolRegistry    动态 Tool 列表来源
      * @param templateLoader  静态 system prompt 模板加载器
+     * @param longTermMemory  长期记忆检索（默认可为空实现）
      */
-    public ReActPromptBuilder(ToolRegistry toolRegistry, PromptTemplateLoader templateLoader) {
+    public ReActPromptBuilder(
+            ToolRegistry toolRegistry,
+            PromptTemplateLoader templateLoader,
+            LongTermMemory longTermMemory) {
         this.toolRegistry = toolRegistry;
         this.templateLoader = templateLoader;
+        this.longTermMemory = longTermMemory;
     }
 
     /**
-     * 读取 system prompt 模板并动态拼接当前可用 Tool 列表。
+     * 读取 system prompt 模板并动态拼接当前可用 Tool 列表（不含长期记忆）。
      */
     public String buildSystemPrompt() {
+        return buildSystemPrompt(null, null);
+    }
+
+    /**
+     * 读取 system prompt；若长期记忆 recall 非空则追加「相关历史记忆」段落。
+     */
+    public String buildSystemPrompt(String sessionId, String query) {
+        StringBuilder prompt = new StringBuilder(buildBaseSystemPrompt());
+        appendLongTermMemories(prompt, sessionId, query);
+        return prompt.toString();
+    }
+
+    private String buildBaseSystemPrompt() {
         StringBuilder prompt = new StringBuilder(templateLoader.loadSystemPrompt().trim());
 
         List<ToolDescriptor> tools = toolRegistry.listAllTools();
@@ -45,6 +68,20 @@ public class ReActPromptBuilder {
                     .append('\n');
         }
         return prompt.toString();
+    }
+
+    private void appendLongTermMemories(StringBuilder prompt, String sessionId, String query) {
+        if (sessionId == null || sessionId.isBlank() || query == null || query.isBlank()) {
+            return;
+        }
+        List<String> memories = longTermMemory.recall(sessionId, query, LONG_TERM_RECALL_TOP_K);
+        if (memories.isEmpty()) {
+            return;
+        }
+        prompt.append("\n\n").append(LONG_TERM_MEMORY_SECTION).append("：\n");
+        for (String memory : memories) {
+            prompt.append("- ").append(memory).append('\n');
+        }
     }
 
     /**

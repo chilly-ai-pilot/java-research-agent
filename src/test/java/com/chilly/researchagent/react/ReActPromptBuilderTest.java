@@ -1,6 +1,7 @@
 package com.chilly.researchagent.react;
 
 import com.chilly.researchagent.config.AgentProperties;
+import com.chilly.researchagent.memory.NoOpLongTermMemory;
 import com.chilly.researchagent.tool.ToolDescriptor;
 import com.chilly.researchagent.tool.ToolRegistry;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -29,7 +30,8 @@ class ReActPromptBuilderTest {
     /** 每个测试前构造 PromptBuilder。 */
     @BeforeEach
     void setUp() {
-        promptBuilder = new ReActPromptBuilder(toolRegistry, new PromptTemplateLoader(defaultAgentProperties()));
+        promptBuilder = new ReActPromptBuilder(
+                toolRegistry, new PromptTemplateLoader(defaultAgentProperties()), new NoOpLongTermMemory());
     }
 
     /** system prompt 应包含静态规则与动态 Tool 名。 */
@@ -143,6 +145,16 @@ class ReActPromptBuilderTest {
         assertThat(prompt).contains("用户问题：你好");
         assertThat(prompt).doesNotContain("--- Step");
         assertThat(prompt).contains("请根据以上信息，输出下一步 JSON 决策");
+    }
+
+    /** NoOp 长期记忆 recall 为空时，prompt 不应包含「相关历史记忆」。 */
+    @Test
+    void buildSystemPromptOmitsLongTermSectionWhenRecallEmpty() {
+        when(toolRegistry.listAllTools()).thenReturn(List.of());
+
+        String prompt = promptBuilder.buildSystemPrompt("session-1", "Transformer");
+
+        assertThat(prompt).doesNotContain("相关历史记忆");
     }
 
     /** MCP SDK 0.18.3: type, properties, required, additionalProperties, defs, definitions */
