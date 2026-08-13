@@ -6,6 +6,9 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.time.Duration;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -27,5 +30,16 @@ class GatewayIntegrationTest {
         assertThat(reply.length()).isGreaterThan(10);
         assertThat(reply.toLowerCase()).doesNotContain("error");
         assertThat(reply).doesNotContain("Exception");
+    }
+
+    @Test
+    void streamingChat() {
+        List<String> chunks = gatewayChatService.chatStream("数到 5")
+                .collectList()
+                .block(Duration.ofSeconds(60));
+
+        assertThat(chunks).isNotNull();
+        assertThat(chunks).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(String.join("", chunks)).isNotBlank();
     }
 }
