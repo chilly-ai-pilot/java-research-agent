@@ -8,10 +8,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Iteration 3 Step 5：ReAct 端到端场景 A/B（检索 + 闲聊）。
+ * Iteration 3 Step 5–6：ReAct 端到端场景 A–D。
  *
  * <p>集成场景需 Gateway + MCP 同时就绪：
  * {@code GATEWAY_INTEGRATION=true MCP_INTEGRATION=true mvn -q test -Dtest=ReActScenarioTest}
@@ -46,6 +48,32 @@ class ReActScenarioTest {
 
             assertThat(result.terminatedReason()).isEqualTo(TerminatedReason.LLM_FINISH);
             assertThat(ReActScenarioSupport.countToolCalls(result)).isZero();
+            assertThat(result.finalAnswer()).isNotBlank();
+        }
+
+        /** 场景 C：知识库无内容时上网搜索，应出现 web_search 调用。 */
+        @Test
+        void scenarioWebSearch() {
+            ReActResult result = reActLoop.run("知识库里关于 XYZabc123 没有内容，帮我上网搜一下");
+
+            assertThat(ReActScenarioSupport.usedTool(result, "web_search")).isTrue();
+            assertThat(result.finalAnswer()).isNotBlank();
+        }
+
+        /** 场景 D：创建复习卡片，应调用 createFlashcard 且 params 含标题与内容。 */
+        @Test
+        void scenarioCreateFlashcard() {
+            ReActResult result = reActLoop.run("把'Transformer 是自注意力机制'做成复习卡片，标题叫 Transformer 基础");
+
+            List<ReActStep> flashcardSteps = ReActScenarioSupport.toolCallSteps(result).stream()
+                    .filter(step -> "createFlashcard".equals(step.tool()))
+                    .toList();
+            assertThat(flashcardSteps).isNotEmpty();
+
+            ReActStep flashcardStep = flashcardSteps.getFirst();
+            assertThat(ReActScenarioSupport.paramsContain(flashcardStep, "Transformer")).isTrue();
+            assertThat(ReActScenarioSupport.paramsContain(flashcardStep, "基础")
+                    || ReActScenarioSupport.paramsContain(flashcardStep, "title")).isTrue();
             assertThat(result.finalAnswer()).isNotBlank();
         }
     }
