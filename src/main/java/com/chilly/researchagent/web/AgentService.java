@@ -10,15 +10,16 @@ import com.chilly.researchagent.web.dto.ChatRequest;
 import com.chilly.researchagent.web.dto.ChatResponse;
 import com.chilly.researchagent.web.dto.StepAuditDto;
 import com.chilly.researchagent.web.dto.StreamDoneEvent;
-import org.springframework.http.MediaType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * 编排 ReAct 循环、会话 ID 与审计日志；Controller 仅负责 HTTP 映射。
@@ -26,15 +27,14 @@ import java.util.concurrent.CompletableFuture;
 @Service
 public class AgentService {
 
-    private static final long SSE_TIMEOUT_MS = 120_000L;
-    private static final int STREAM_CHUNK_SIZE = 80;
-
     private final ReActLoop reActLoop;
     private final AuditLogService auditLogService;
+    private final ObjectMapper objectMapper;
 
-    public AgentService(ReActLoop reActLoop, AuditLogService auditLogService) {
+    public AgentService(ReActLoop reActLoop, AuditLogService auditLogService, ObjectMapper objectMapper) {
         this.reActLoop = reActLoop;
         this.auditLogService = auditLogService;
+        this.objectMapper = objectMapper;
     }
 
     /** 非流式对话：跑完 ReAct 后返回完整 JSON 响应。 */
@@ -43,40 +43,61 @@ public class AgentService {
         return toChatResponse(run.sessionId(), run.result());
     }
 
-    /** 流式对话：先推送 step 事件，再分块推送 answer，最后 done。 */
-    public SseEmitter streamChat(ChatRequest request) {
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        CompletableFuture.runAsync(() -> streamChatAsync(request, emitter));
-        return emitter;
+    /** 流式对话：手写 SSE 并 flush，step 在 ReAct 过程中实时推送。 */
+    public StreamingResponseBody streamChatBody(ChatRequest request) {
+        return outputStream -> streamChatToOutput(request, outputStream);
     }
 
-    private void streamChatAsync(ChatRequest request, SseEmitter emitter) {
+    private void streamChatToOutput(ChatRequest request, OutputStream outputStream) throws IOException {
+        String requestId = UUID.randomUUID().toString();
+        String sessionId = resolveSessionId(request.sessionId());
+        Instant startedAt = Instant.now();
+        long startedMs = System.currentTimeMillis();
+
         try {
-            AgentRun run = execute(request);
-            ReActResult result = run.result();
+            java.util.concurrent.atomic.AtomicBoolean tokensSent = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-            for (ReActStep step : result.steps()) {
-                if (AgentDecision.ACTION_CALL_TOOL.equals(step.action())) {
-                    StepAuditDto dto = toStepAuditDto(step);
-                    emitter.send(SseEmitter.event().name("step").data(dto, MediaType.APPLICATION_JSON));
-                }
+            ReActResult result = reActLoop.run(
+                    sessionId,
+                    request.message(),
+                    step -> {
+                        if (!AgentDecision.ACTION_CALL_TOOL.equals(step.action())) {
+                            return;
+                        }
+                        try {
+                            String json = objectMapper.writeValueAsString(toStepAuditDto(step));
+                            SseEventWriter.send(outputStream, "step", json);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    },
+                    token -> {
+                        try {
+                            tokensSent.set(true);
+                            SseEventWriter.send(outputStream, "token", token);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+
+            auditLogService.log(new AuditRecord(
+                    requestId,
+                    sessionId,
+                    request.message(),
+                    toAuditSteps(result.steps()),
+                    result.finalAnswer(),
+                    result.terminatedReason().name(),
+                    startedAt,
+                    System.currentTimeMillis() - startedMs));
+
+            if (!tokensSent.get() && result.finalAnswer() != null && !result.finalAnswer().isBlank()) {
+                SseEventWriter.send(outputStream, "token", result.finalAnswer());
             }
 
-            for (String chunk : chunkText(result.finalAnswer(), STREAM_CHUNK_SIZE)) {
-                emitter.send(SseEmitter.event().name("token").data(chunk));
-            }
-
-            StreamDoneEvent done = new StreamDoneEvent(run.sessionId(), result.terminatedReason().name());
-            emitter.send(SseEmitter.event().name("done").data(done, MediaType.APPLICATION_JSON));
-            emitter.complete();
-        } catch (IOException e) {
-            emitter.completeWithError(e);
-        } catch (RuntimeException e) {
-            try {
-                emitter.completeWithError(e);
-            } catch (Exception ignored) {
-                // emitter may already be closed
-            }
+            StreamDoneEvent done = new StreamDoneEvent(sessionId, result.terminatedReason().name());
+            SseEventWriter.send(outputStream, "done", objectMapper.writeValueAsString(done));
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
     }
 
@@ -136,17 +157,6 @@ public class AgentService {
                         step.params(),
                         step.observation()))
                 .toList();
-    }
-
-    private static List<String> chunkText(String text, int chunkSize) {
-        if (text == null || text.isEmpty()) {
-            return List.of("");
-        }
-        java.util.ArrayList<String> chunks = new java.util.ArrayList<>();
-        for (int i = 0; i < text.length(); i += chunkSize) {
-            chunks.add(text.substring(i, Math.min(i + chunkSize, text.length())));
-        }
-        return chunks;
     }
 
     private record AgentRun(String sessionId, ReActResult result) {

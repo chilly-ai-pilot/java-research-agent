@@ -4,6 +4,7 @@ import com.chilly.researchagent.config.AgentProperties;
 import com.chilly.researchagent.tool.ToolRegistry;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -48,8 +49,12 @@ public class ReActStepExecutor {
 
     /**
      * 执行一步 ReAct；整步耗时超过 {@code agent.step-timeout-ms} 则抛 {@link StepTimeoutException}。
+     * 流式 SSE 路径必须在响应线程同步执行，避免跨线程写 {@code OutputStream} 与 {@code future.get()} 互相阻塞。
      */
     public StepResult executeOneStep(ReActContext context) {
+        if (context.tokenListener() != null) {
+            return doExecuteOneStep(context);
+        }
         try {
             return CompletableFuture.supplyAsync(() -> doExecuteOneStep(context))
                     .get(agentProperties.stepTimeoutMs(), TimeUnit.MILLISECONDS);
@@ -74,7 +79,9 @@ public class ReActStepExecutor {
         traceLogger.logStepStart(context.loopStep(), stepPrompt);
 
         String systemPrompt = promptBuilder.buildSystemPrompt(context.sessionId(), context.userQuestion());
-        String rawDecision = gatewayChatService.chat(systemPrompt, context.conversationHistory(), stepPrompt);
+        String rawDecision = context.tokenListener() != null
+                ? streamLlmDecision(systemPrompt, context, stepPrompt)
+                : gatewayChatService.chat(systemPrompt, context.conversationHistory(), stepPrompt);
         AgentDecision decision = decisionParser.parse(rawDecision);
         traceLogger.logLlmDecision(context.loopStep(), rawDecision, decision);
 
@@ -90,6 +97,27 @@ public class ReActStepExecutor {
         String truncated = truncateObservation(observation);
         traceLogger.logToolObservation(context.loopStep(), decision.tool(), truncated);
         return StepResult.continueWith(truncated, decision);
+    }
+
+    private String streamLlmDecision(String systemPrompt, ReActContext context, String stepPrompt) {
+        FinishAnswerStreamExtractor extractor = new FinishAnswerStreamExtractor();
+        ReActTokenListener tokenListener = context.tokenListener();
+        Duration llmTimeout = Duration.ofMillis(Math.max(1_000L, agentProperties.stepTimeoutMs() - 2_000L));
+
+        String rawDecision = gatewayChatService.chatStream(systemPrompt, context.conversationHistory(), stepPrompt)
+                .timeout(llmTimeout)
+                .reduce(new StringBuilder(), (full, chunk) -> {
+                    full.append(chunk);
+                    String answerPart = extractor.consume(chunk);
+                    if (!answerPart.isEmpty()) {
+                        tokenListener.onToken(answerPart);
+                    }
+                    return full;
+                })
+                .map(StringBuilder::toString)
+                .block(llmTimeout);
+
+        return rawDecision != null ? rawDecision : "";
     }
 
     /** 检测 LLM 是否连续返回与上一步相同的 tool + params。 */

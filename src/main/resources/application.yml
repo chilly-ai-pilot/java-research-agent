@@ -21,7 +21,7 @@ agent:
   max-steps: 10
   step-timeout-ms: 30000
   total-timeout-ms: 90000
-  max-observation-chars: 2000
+  max-observation-chars: 100000
   system-prompt-path: prompts/system-react.txt
   memory:
     max-messages: 20

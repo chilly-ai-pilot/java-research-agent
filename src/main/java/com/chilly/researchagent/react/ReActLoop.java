@@ -58,15 +58,38 @@ public class ReActLoop {
      * 运行 ReAct 循环；循环开始前加载 session 历史，结束后只写入最终 QA 对。
      */
     public ReActResult run(String sessionId, String userQuestion) {
+        return run(sessionId, userQuestion, null);
+    }
+
+    /**
+     * 运行 ReAct 循环；{@code stepListener} 非空时每添加一步即回调（流式 SSE 用）。
+     */
+    public ReActResult run(String sessionId, String userQuestion, ReActStepListener stepListener) {
+        return run(sessionId, userQuestion, stepListener, null);
+    }
+
+    /**
+     * 运行 ReAct 循环；{@code tokenListener} 非空时 finish 步通过 LLM 流式推送 answer token。
+     */
+    public ReActResult run(
+            String sessionId,
+            String userQuestion,
+            ReActStepListener stepListener,
+            ReActTokenListener tokenListener) {
         String normalizedSessionId = SessionChatMemory.normalizeSessionId(sessionId);
         List<Message> history = ChatMessageConverter.toSpringAiMessages(
                 chatMemory.getRecent(normalizedSessionId, chatMemoryProperties.maxMessages()));
-        ReActResult result = runLoop(new ReActContext(userQuestion, history, normalizedSessionId));
+        ReActContext context = new ReActContext(userQuestion, history, normalizedSessionId, tokenListener);
+        ReActResult result = runLoop(context, stepListener);
         persistConversation(normalizedSessionId, userQuestion, result.finalAnswer());
         return result;
     }
 
     private ReActResult runLoop(ReActContext context) {
+        return runLoop(context, null);
+    }
+
+    private ReActResult runLoop(ReActContext context, ReActStepListener stepListener) {
         long startedAt = System.currentTimeMillis();
         traceLogger.logRunStart(context.userQuestion());
 
@@ -81,26 +104,30 @@ public class ReActLoop {
             try {
                 StepResult result = stepExecutor.executeOneStep(context);
                 if (result instanceof StepResult.Finished finished) {
-                    context.addStep(new ReActStep(
+                    ReActStep finishStep = new ReActStep(
                             context.nextStepIndex(),
                             AgentDecision.ACTION_FINISH,
                             null,
                             null,
                             finished.answer(),
-                            Instant.now()));
+                            Instant.now());
+                    context.addStep(finishStep);
+                    notifyStep(stepListener, finishStep);
                     ReActResult reactResult = new ReActResult(finished.answer(), context.steps(), TerminatedReason.LLM_FINISH);
                     traceLogger.logRunEnd(reactResult, System.currentTimeMillis() - startedAt);
                     return reactResult;
                 }
 
                 StepResult.Continue continued = (StepResult.Continue) result;
-                context.addStep(new ReActStep(
+                ReActStep toolStep = new ReActStep(
                         context.nextStepIndex(),
                         continued.decision().action(),
                         continued.decision().tool(),
                         continued.decision().params(),
                         continued.observation(),
-                        Instant.now()));
+                        Instant.now());
+                context.addStep(toolStep);
+                notifyStep(stepListener, toolStep);
             } catch (StepTimeoutException | DecisionParseException | DuplicateToolCallException e) {
                 traceLogger.logRunError(step, e.getMessage());
                 ReActResult result = new ReActResult(e.getMessage(), context.steps(), TerminatedReason.ERROR);
@@ -112,6 +139,12 @@ public class ReActLoop {
         ReActResult result = new ReActResult(MAX_STEPS_MESSAGE, context.steps(), TerminatedReason.MAX_STEPS);
         traceLogger.logRunEnd(result, System.currentTimeMillis() - startedAt);
         return result;
+    }
+
+    private static void notifyStep(ReActStepListener stepListener, ReActStep step) {
+        if (stepListener != null) {
+            stepListener.onStep(step);
+        }
     }
 
     private void persistConversation(String sessionId, String userQuestion, String finalAnswer) {

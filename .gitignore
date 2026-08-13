@@ -3,3 +3,7 @@ target/
 *.iml
 .DS_Store
 chroma_db/
+ui/.venv/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml

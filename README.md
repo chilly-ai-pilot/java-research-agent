@@ -19,6 +19,7 @@ source scripts/use-java21.sh
 | Spring Boot | 3.5.16 | — |
 | Spring AI | 1.1.8 | — |
 | java-research-agent | — | 8081 |
+| **Chat UI（Streamlit）** | — | **8501** |
 | go-llm-gateway（依赖） | — | 8080 |
 | rag-mcp HTTP（依赖，可选） | — | 8000 |
 
@@ -45,3 +46,33 @@ mvn -q test
 永久失效（含 listTools()），要等 rag-mcp 把这条日志挪到 stderr 才能修，
 不在本仓库范围内。详见 `McpConnectivityIntegrationTest` 的类注释和
 commit dcb0aba。
+
+## Chat UI（Streamlit）
+
+Agent 后端仍是 Java（8081）；聊天页用 **Streamlit** 单独跑，对接现有 REST/SSE API。
+
+```bash
+# 终端 1：Agent（需 Gateway + 可选 MCP）
+source scripts/use-java21.sh
+mvn spring-boot:run -Dspring-boot.run.profiles=mcp
+
+# 终端 2：Chat UI
+chmod +x scripts/run-chat-ui.sh   # 首次
+./scripts/run-chat-ui.sh
+```
+
+浏览器打开 http://localhost:8501 。环境变量：
+
+- `AGENT_API_URL` — Agent 地址，默认 `http://localhost:8081`
+- `CHAT_UI_PORT` — Streamlit 端口，默认 `8501`
+- `PYPI_INDEX` — pip 镜像，默认失败时自动用清华源
+
+**pip 报 `No matching distribution found for protobuf`？** 通常是 macOS 官方 Python 未装 SSL 根证书，pip 其实连不上 PyPI。任选其一：
+
+```bash
+# 方法 1：运行一次（路径随 Python 版本略有不同）
+/Applications/Python\ 3.13/Install\ Certificates.command
+
+# 方法 2：脚本已内置 venv + certifi + 镜像回退，直接重跑
+./scripts/run-chat-ui.sh
+```

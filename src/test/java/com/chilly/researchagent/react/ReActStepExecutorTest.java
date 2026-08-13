@@ -12,6 +12,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import reactor.core.publisher.Flux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +60,26 @@ class ReActStepExecutorTest {
 
         assertThat(result).isInstanceOf(StepResult.Finished.class);
         assertThat(((StepResult.Finished) result).answer()).isEqualTo("ok");
+    }
+
+    /** 流式 finish 时应逐 token 回调并正确解析最终答案。 */
+    @Test
+    void streamsFinishAnswerTokensWhenTokenListenerPresent() {
+        when(toolRegistry.listAllTools()).thenReturn(List.of());
+        when(gatewayChatService.chatStream(any(), any(), any())).thenReturn(Flux.just(
+                "{\"action\":\"finish\",\"answer\":\"",
+                "你",
+                "好",
+                "\"}"));
+
+        List<String> tokens = new CopyOnWriteArrayList<>();
+        ReActContext context = new ReActContext("hello", List.of(), null, tokens::add);
+
+        StepResult result = executor.executeOneStep(context);
+
+        assertThat(result).isInstanceOf(StepResult.Finished.class);
+        assertThat(((StepResult.Finished) result).answer()).isEqualTo("你好");
+        assertThat(tokens).containsExactly("你", "好");
     }
 
     /** LLM 返回 call_tool 时应调用 Tool 并截断 observation。 */

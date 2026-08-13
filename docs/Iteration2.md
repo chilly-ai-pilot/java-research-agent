@@ -164,3 +164,31 @@ curl -N -X POST http://localhost:8080/v1/chat/completions \
     "stream": false
   }'
 ```
+---
+
+## 本次修改总结（Iteration 2 完整交付）
+
+### 核心功能（Step 1–5，共 5 个 commit）
+| 组件 | 职责 |
+|---|---|
+| `GatewayChatService` | 非流式/流式单轮对话，支持 systemPrompt + history |
+| `GatewayExceptionTranslator` | 将 RestClient/WebClient 异常翻译为 `GatewayUnavailableException` |
+| `GatewayConfigLogger` + `GatewaySettings` | 启动时打印 Gateway 生效配置 |
+| `GatewayHttpClientConfig` | **代码层强制 HTTP/1.1**，修复 h2c 导致 502 |
+| 测试套件 | Mock 单元测试 + `GATEWAY_INTEGRATION` 门控集成测试 |
+
+### 重构与修复（`79ef3d4` + `152945c`）
+- 异常处理独立为 Translator，错误测试改为 Mock（不依赖端口不可达）
+- 流式用 `extractStreamChunk()` 跳过空 chunk
+- 移除误导性的 `GatewayConfig`，改为 `GatewayConfigLogger`
+- 集成测试断言改为验证「有内容、无 error」，不绑定具体模型输出
+
+### 测试命令
+```bash
+# 单元（无 Gateway）
+mvn -q test -Dtest=GatewayChatServiceTest,GatewayChatServiceErrorTest,GatewayExceptionTranslatorTest
+
+# 集成（Gateway @ localhost:8080）
+export GATEWAY_INTEGRATION=true
+mvn -q test -Dtest=GatewayIntegrationTest
+```

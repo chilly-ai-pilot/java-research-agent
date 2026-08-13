@@ -13,6 +13,7 @@ public class ReActContext {
     private final String userQuestion;
     private final List<Message> conversationHistory;
     private final String sessionId;
+    private final ReActTokenListener tokenListener;
     private final List<ReActStep> steps = new ArrayList<>();
     private int loopStep;
 
@@ -20,7 +21,7 @@ public class ReActContext {
      * @param userQuestion 用户原始问题，贯穿整个循环
      */
     public ReActContext(String userQuestion) {
-        this(userQuestion, List.of(), null);
+        this(userQuestion, List.of(), null, null);
     }
 
     /**
@@ -28,7 +29,7 @@ public class ReActContext {
      * @param conversationHistory  本轮之前的多轮对话（不含当前 userQuestion）
      */
     public ReActContext(String userQuestion, List<Message> conversationHistory) {
-        this(userQuestion, conversationHistory, null);
+        this(userQuestion, conversationHistory, null, null);
     }
 
     /**
@@ -37,9 +38,26 @@ public class ReActContext {
      * @param sessionId            会话 ID，供长期记忆 recall 使用
      */
     public ReActContext(String userQuestion, List<Message> conversationHistory, String sessionId) {
+        this(userQuestion, conversationHistory, sessionId, null);
+    }
+
+    /**
+     * @param tokenListener 非空时在 finish 步流式推送 LLM answer token（SSE 用）
+     */
+    public ReActContext(
+            String userQuestion,
+            List<Message> conversationHistory,
+            String sessionId,
+            ReActTokenListener tokenListener) {
         this.userQuestion = userQuestion;
         this.conversationHistory = conversationHistory == null ? List.of() : List.copyOf(conversationHistory);
         this.sessionId = sessionId;
+        this.tokenListener = tokenListener;
+    }
+
+    /** 返回 finish 步 LLM token 回调（可能为 null）。 */
+    public ReActTokenListener tokenListener() {
+        return tokenListener;
     }
 
     /** 返回会话 ID（可能为 null，例如单元测试未设置时）。 */
