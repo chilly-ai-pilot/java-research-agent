@@ -8,29 +8,26 @@ public class GatewayUnavailableException extends RuntimeException {
     private final String gatewayUrl;
     private final Integer httpStatus;
 
+    /**
+     * @param message    已格式化的错误消息
+     * @param gatewayUrl 请求发送到的 Gateway 地址
+     * @param httpStatus HTTP 状态码，连接失败时为 null
+     * @param cause      原始异常
+     */
     public GatewayUnavailableException(
-            String gatewayUrl, Integer httpStatus, String causeSummary, Throwable cause) {
-        super(formatMessage(gatewayUrl, httpStatus, causeSummary), cause);
+            String message, String gatewayUrl, Integer httpStatus, Throwable cause) {
+        super(message, cause);
         this.gatewayUrl = gatewayUrl;
         this.httpStatus = httpStatus;
     }
 
+    /** 返回 Gateway 地址。 */
     public String gatewayUrl() {
         return gatewayUrl;
     }
 
+    /** 返回 HTTP 状态码，连接层失败时为 null。 */
     public Integer httpStatus() {
         return httpStatus;
-    }
-
-    private static String formatMessage(String gatewayUrl, Integer httpStatus, String causeSummary) {
-        StringBuilder message = new StringBuilder("Gateway unavailable at ").append(gatewayUrl);
-        if (httpStatus != null) {
-            message.append(" (HTTP ").append(httpStatus).append(')');
-        }
-        if (causeSummary != null && !causeSummary.isBlank()) {
-            message.append(": ").append(causeSummary);
-        }
-        return message.toString();
     }
 }

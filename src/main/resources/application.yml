@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: java-research-agent
+  http:
+    reactiveclient:
+      connector: jdk # 与 GatewayHttpClientConfig 配合，流式 WebClient 强制 HTTP/1.1
   ai:
     openai:
       base-url: ${GATEWAY_URL:http://localhost:8080}

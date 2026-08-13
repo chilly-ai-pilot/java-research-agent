@@ -5,13 +5,9 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.openai.autoconfigure.OpenAiConnectionProperties;
 import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.retry.NonTransientAiException;
-import org.springframework.ai.retry.TransientAiException;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestClientException;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
@@ -25,11 +21,19 @@ import java.util.List;
 public class GatewayChatService {
 
     private final OpenAiChatModel chatModel;
-    private final String gatewayUrl;
+    private final OpenAiConnectionProperties connectionProperties;
+    private final GatewayExceptionTranslator exceptionTranslator;
 
-    public GatewayChatService(OpenAiChatModel chatModel, Environment environment) {
+    /**
+     * 构造注入 OpenAiChatModel、Gateway 连接配置与异常翻译器。
+     */
+    public GatewayChatService(
+            OpenAiChatModel chatModel,
+            OpenAiConnectionProperties connectionProperties,
+            GatewayExceptionTranslator exceptionTranslator) {
         this.chatModel = chatModel;
-        this.gatewayUrl = environment.getProperty("spring.ai.openai.base-url", "http://localhost:8080");
+        this.connectionProperties = connectionProperties;
+        this.exceptionTranslator = exceptionTranslator;
     }
 
     /**
@@ -47,7 +51,7 @@ public class GatewayChatService {
             ChatResponse response = chatModel.call(buildPrompt(systemPrompt, history, userMessage));
             return extractText(response);
         } catch (RuntimeException e) {
-            throw toGatewayUnavailable(e);
+            throw exceptionTranslator.translate(e, connectionProperties.getBaseUrl());
         }
     }
 
@@ -63,16 +67,22 @@ public class GatewayChatService {
      */
     public Flux<String> chatStream(String systemPrompt, List<Message> history, String userMessage) {
         Prompt prompt = buildPrompt(systemPrompt, history, userMessage);
-        return chatModel.stream(prompt)
-                .map(this::extractText)
-                .filter(text -> text != null && !text.isEmpty())
-                .onErrorMap(this::toGatewayUnavailable);
+        return Flux.defer(() -> {
+                    Flux<ChatResponse> responseFlux = chatModel.stream(prompt);
+                    if (responseFlux == null) {
+                        // 编程错误：不翻译为 GatewayUnavailableException，与网络/Gateway 故障区分
+                        throw new IllegalStateException("Gateway stream returned null Flux");
+                    }
+                    return responseFlux;
+                })
+                .map(this::extractStreamChunk)
+                .filter(text -> !text.isEmpty())
+                .onErrorMap(error -> exceptionTranslator.translate(error, connectionProperties.getBaseUrl()));
     }
 
-    String gatewayUrl() {
-        return gatewayUrl;
-    }
-
+    /**
+     * 按 system → history → user 顺序组装 Prompt。
+     */
     private Prompt buildPrompt(String systemPrompt, List<Message> history, String userMessage) {
         List<Message> messages = new ArrayList<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {
@@ -85,7 +95,10 @@ public class GatewayChatService {
         return new Prompt(messages);
     }
 
-    private String extractText(ChatResponse response) {
+    /**
+     * 从流式 ChatResponse chunk 提取文本；中间 chunk 可能为空，返回空串而非抛异常。
+     */
+    private String extractStreamChunk(ChatResponse response) {
         if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
             return "";
         }
@@ -93,53 +106,17 @@ public class GatewayChatService {
         return text != null ? text : "";
     }
 
-    private GatewayUnavailableException toGatewayUnavailable(Throwable cause) {
-        if (cause instanceof GatewayUnavailableException gatewayUnavailable) {
-            return gatewayUnavailable;
+    /**
+     * 从非流式 ChatResponse 提取非空 assistant 文本；空响应视为编程/协议错误。
+     */
+    private String extractText(ChatResponse response) {
+        if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+            throw new IllegalStateException("Gateway returned empty chat response");
         }
-        if (!isGatewayFailure(cause)) {
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            throw new RuntimeException(cause);
+        String text = response.getResult().getOutput().getText();
+        if (text == null || text.isBlank()) {
+            throw new IllegalStateException("Gateway returned blank chat text");
         }
-        return new GatewayUnavailableException(
-                gatewayUrl, extractHttpStatus(cause), summarizeCause(cause), cause);
-    }
-
-    private boolean isGatewayFailure(Throwable cause) {
-        Throwable current = cause;
-        while (current != null) {
-            if (current instanceof RestClientException
-                    || current instanceof TransientAiException
-                    || current instanceof NonTransientAiException) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    private Integer extractHttpStatus(Throwable cause) {
-        Throwable current = cause;
-        while (current != null) {
-            if (current instanceof HttpStatusCodeException httpError) {
-                return httpError.getStatusCode().value();
-            }
-            current = current.getCause();
-        }
-        return null;
-    }
-
-    private String summarizeCause(Throwable cause) {
-        Throwable root = cause;
-        while (root.getCause() != null) {
-            root = root.getCause();
-        }
-        String message = root.getMessage();
-        if (message == null || message.isBlank()) {
-            message = cause.getClass().getSimpleName();
-        }
-        return message.length() > 200 ? message.substring(0, 200) + "..." : message;
+        return text;
     }
 }

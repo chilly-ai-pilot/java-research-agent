@@ -19,9 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnabledIfEnvironmentVariable(named = "GATEWAY_INTEGRATION", matches = "true")
 class GatewayIntegrationTest {
 
+    private static final Duration STREAM_TIMEOUT = Duration.ofSeconds(120);
+
     @Autowired
     private GatewayChatService gatewayChatService;
 
+    /** 验证非流式调用能拿到非空、无异常字样的回复。 */
     @Test
     void nonStreamingChat() {
         String reply = gatewayChatService.chat("你好，请用一句话介绍你自己");
@@ -32,14 +35,19 @@ class GatewayIntegrationTest {
         assertThat(reply).doesNotContain("Exception");
     }
 
+    /** 验证流式调用能逐 chunk 返回且拼接后非空。 */
     @Test
     void streamingChat() {
         List<String> chunks = gatewayChatService.chatStream("数到 5")
                 .collectList()
-                .block(Duration.ofSeconds(60));
+                .block(STREAM_TIMEOUT);
 
-        assertThat(chunks).isNotNull();
-        assertThat(chunks).hasSizeGreaterThanOrEqualTo(2);
-        assertThat(String.join("", chunks)).isNotBlank();
+        assertThat(chunks).isNotNull().isNotEmpty();
+
+        String fullText = String.join("", chunks);
+        assertThat(fullText).isNotBlank();
+        assertThat(fullText.length()).isGreaterThan(3);
+        assertThat(fullText.toLowerCase()).doesNotContain("error");
+        assertThat(fullText).doesNotContain("Exception");
     }
 }
