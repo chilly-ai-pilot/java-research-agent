@@ -1,6 +1,8 @@
 package com.chilly.researchagent.react;
 
 import com.chilly.researchagent.config.AgentProperties;
+import com.chilly.researchagent.memory.ChatMemoryProperties;
+import com.chilly.researchagent.memory.SessionChatMemory;
 import com.chilly.researchagent.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +42,12 @@ class ReActLoopTest {
                 promptBuilder,
                 defaultAgentProperties(),
                 ReActTraceLogger.forTests());
-        loop = new ReActLoop(stepExecutor, defaultAgentProperties(), ReActTraceLogger.forTests());
+        loop = new ReActLoop(
+                stepExecutor,
+                defaultAgentProperties(),
+                ReActTraceLogger.forTests(),
+                new SessionChatMemory(new ChatMemoryProperties(20, 60)),
+                new ChatMemoryProperties(20, 60));
         when(toolRegistry.listAllTools()).thenReturn(List.of());
     }
 

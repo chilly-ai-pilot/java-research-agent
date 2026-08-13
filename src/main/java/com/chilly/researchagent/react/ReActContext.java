@@ -1,5 +1,7 @@
 package com.chilly.researchagent.react;
 
+import org.springframework.ai.chat.messages.Message;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,6 +11,7 @@ import java.util.List;
 public class ReActContext {
 
     private final String userQuestion;
+    private final List<Message> conversationHistory;
     private final List<ReActStep> steps = new ArrayList<>();
     private int loopStep;
 
@@ -16,7 +19,21 @@ public class ReActContext {
      * @param userQuestion 用户原始问题，贯穿整个循环
      */
     public ReActContext(String userQuestion) {
+        this(userQuestion, List.of());
+    }
+
+    /**
+     * @param userQuestion         用户原始问题，贯穿整个循环
+     * @param conversationHistory  本轮之前的多轮对话（不含当前 userQuestion）
+     */
+    public ReActContext(String userQuestion, List<Message> conversationHistory) {
         this.userQuestion = userQuestion;
+        this.conversationHistory = conversationHistory == null ? List.of() : List.copyOf(conversationHistory);
+    }
+
+    /** 返回本轮之前的多轮对话历史。 */
+    public List<Message> conversationHistory() {
+        return conversationHistory;
     }
 
     /** 设置当前循环步序号（由 {@link ReActLoop} 在每步执行前设置）。 */

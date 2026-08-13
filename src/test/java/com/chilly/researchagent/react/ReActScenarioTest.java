@@ -1,5 +1,7 @@
 package com.chilly.researchagent.react;
 
+import com.chilly.researchagent.memory.ChatMemory;
+import com.chilly.researchagent.memory.ChatMessage;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -75,6 +77,41 @@ class ReActScenarioTest {
             assertThat(ReActScenarioSupport.paramsContain(flashcardStep, "基础")
                     || ReActScenarioSupport.paramsContain(flashcardStep, "title")).isTrue();
             assertThat(result.finalAnswer()).isNotBlank();
+        }
+    }
+
+    @Nested
+    @SpringBootTest
+    @ActiveProfiles("mcp")
+    @Tag("integration")
+    @EnabledIfEnvironmentVariable(named = "GATEWAY_INTEGRATION", matches = "true")
+    @EnabledIfEnvironmentVariable(named = "MCP_INTEGRATION", matches = "true")
+    class MultiTurnScenarios {
+
+        @Autowired
+        private ReActLoop reActLoop;
+
+        @Autowired
+        private ChatMemory chatMemory;
+
+        /** 先 web_search「Transformer的概念」，再问「刚才问的概念是什么」应能回忆。 */
+        @Test
+        void remembersConceptFromPreviousWebSearchTurn() {
+            String sessionId = "mem-transformer-concept";
+            chatMemory.clear(sessionId);
+
+            ReActResult turn1 = reActLoop.run(sessionId, "帮我上网搜一下 Transformer的概念");
+            assertThat(ReActScenarioSupport.usedTool(turn1, "web_search")).isTrue();
+            assertThat(turn1.finalAnswer()).isNotBlank();
+
+            ReActResult turn2 = reActLoop.run(sessionId, "刚才问的概念是什么");
+            assertThat(turn2.finalAnswer()).isNotBlank();
+            assertThat(turn2.finalAnswer()).containsIgnoringCase("Transformer");
+
+            List<ChatMessage> history = chatMemory.getRecent(sessionId, 10);
+            assertThat(history).hasSize(4);
+            assertThat(history.get(0).content()).contains("Transformer的概念");
+            assertThat(history.get(2).content()).isEqualTo("刚才问的概念是什么");
         }
     }
 }

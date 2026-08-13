@@ -41,7 +41,7 @@ public class SessionChatMemory implements ChatMemory {
         return sessions.computeIfAbsent(normalizedSessionId, ignored -> new InMemoryChatMemory(properties));
     }
 
-    static String normalizeSessionId(String sessionId) {
+    public static String normalizeSessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return DEFAULT_SESSION_ID;
         }
