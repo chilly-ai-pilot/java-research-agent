@@ -23,6 +23,9 @@ public class PromptTemplateLoader {
     private final AgentProperties agentProperties;
     private volatile String systemPrompt;
 
+    /**
+     * @param agentProperties 提供 {@code system-prompt-path} 配置
+     */
     public PromptTemplateLoader(AgentProperties agentProperties) {
         this.agentProperties = agentProperties;
     }
@@ -44,6 +47,9 @@ public class PromptTemplateLoader {
         }
     }
 
+    /**
+     * 从 classpath 读取模板；文件缺失或内容为空白时返回 fallback。
+     */
     public static String loadFromClasspathOrDefault(String path, String fallback) {
         try (InputStream inputStream = new ClassPathResource(path).getInputStream()) {
             String content = StreamUtils.copyToString(inputStream, StandardCharsets.UTF_8);

@@ -21,6 +21,9 @@ public class AgentDecisionParser {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * @param objectMapper JSON 反序列化器
+     */
     public AgentDecisionParser(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }

@@ -38,8 +38,9 @@ class ReActLoopTest {
                 toolRegistry,
                 decisionParser,
                 promptBuilder,
-                defaultAgentProperties());
-        loop = new ReActLoop(stepExecutor, defaultAgentProperties());
+                defaultAgentProperties(),
+                ReActTraceLogger.forTests());
+        loop = new ReActLoop(stepExecutor, defaultAgentProperties(), ReActTraceLogger.forTests());
         when(toolRegistry.listAllTools()).thenReturn(List.of());
     }
 

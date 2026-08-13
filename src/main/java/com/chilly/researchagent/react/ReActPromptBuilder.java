@@ -15,6 +15,10 @@ public class ReActPromptBuilder {
     private final ToolRegistry toolRegistry;
     private final PromptTemplateLoader templateLoader;
 
+    /**
+     * @param toolRegistry    动态 Tool 列表来源
+     * @param templateLoader  静态 system prompt 模板加载器
+     */
     public ReActPromptBuilder(ToolRegistry toolRegistry, PromptTemplateLoader templateLoader) {
         this.toolRegistry = toolRegistry;
         this.templateLoader = templateLoader;
@@ -72,6 +76,7 @@ public class ReActPromptBuilder {
         return prompt.toString();
     }
 
+    /** Tool 描述为空时返回占位文案。 */
     private static String formatToolDescription(String description) {
         return description != null && !description.isBlank() ? description : "无描述";
     }

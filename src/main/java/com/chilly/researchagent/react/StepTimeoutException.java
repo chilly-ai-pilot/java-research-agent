@@ -5,6 +5,10 @@ package com.chilly.researchagent.react;
  */
 public class StepTimeoutException extends RuntimeException {
 
+    /**
+     * @param message 超时说明（含 step-timeout-ms）
+     * @param cause   底层 {@link java.util.concurrent.TimeoutException}
+     */
     public StepTimeoutException(String message, Throwable cause) {
         super(message, cause);
     }

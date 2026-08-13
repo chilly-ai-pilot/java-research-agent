@@ -4,7 +4,6 @@ import com.chilly.researchagent.config.AgentProperties;
 import com.chilly.researchagent.tool.ToolRegistry;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -22,18 +21,29 @@ public class ReActStepExecutor {
     private final AgentDecisionParser decisionParser;
     private final ReActPromptBuilder promptBuilder;
     private final AgentProperties agentProperties;
+    private final ReActTraceLogger traceLogger;
 
+    /**
+     * @param gatewayChatService  LLM 调用入口
+     * @param toolRegistry        MCP Tool 调用入口
+     * @param decisionParser      LLM 输出 JSON 解析器
+     * @param promptBuilder       Prompt 组装器
+     * @param agentProperties     step 超时与 observation 截断配置
+     * @param traceLogger         结构化追踪日志
+     */
     public ReActStepExecutor(
             GatewayChatService gatewayChatService,
             ToolRegistry toolRegistry,
             AgentDecisionParser decisionParser,
             ReActPromptBuilder promptBuilder,
-            AgentProperties agentProperties) {
+            AgentProperties agentProperties,
+            ReActTraceLogger traceLogger) {
         this.gatewayChatService = gatewayChatService;
         this.toolRegistry = toolRegistry;
         this.decisionParser = decisionParser;
         this.promptBuilder = promptBuilder;
         this.agentProperties = agentProperties;
+        this.traceLogger = traceLogger;
     }
 
     /**
@@ -58,11 +68,15 @@ public class ReActStepExecutor {
         }
     }
 
+    /** 执行单步核心逻辑：调 LLM、解析决策、必要时调 Tool。 */
     private StepResult doExecuteOneStep(ReActContext context) {
-        String systemPrompt = promptBuilder.buildSystemPrompt();
         String stepPrompt = promptBuilder.buildStepPrompt(context.steps(), context.userQuestion());
+        traceLogger.logStepStart(context.loopStep(), stepPrompt);
+
+        String systemPrompt = promptBuilder.buildSystemPrompt();
         String rawDecision = gatewayChatService.chat(systemPrompt, List.of(), stepPrompt);
         AgentDecision decision = decisionParser.parse(rawDecision);
+        traceLogger.logLlmDecision(context.loopStep(), rawDecision, decision);
 
         if (decision.isFinish()) {
             return StepResult.finished(decision.answer());
@@ -73,9 +87,12 @@ public class ReActStepExecutor {
         }
 
         String observation = toolRegistry.callTool(decision.tool(), decision.params());
-        return StepResult.continueWith(truncateObservation(observation), decision);
+        String truncated = truncateObservation(observation);
+        traceLogger.logToolObservation(context.loopStep(), decision.tool(), truncated);
+        return StepResult.continueWith(truncated, decision);
     }
 
+    /** 检测 LLM 是否连续返回与上一步相同的 tool + params。 */
     private boolean isDuplicateOfLastStep(ReActContext context, AgentDecision decision) {
         if (context.steps().isEmpty()) {
             return false;
@@ -85,6 +102,7 @@ public class ReActStepExecutor {
                 && decision.params().equals(lastStep.params());
     }
 
+    /** 将 Tool observation 截断到 {@code agent.max-observation-chars}。 */
     private String truncateObservation(String observation) {
         int maxChars = agentProperties.maxObservationChars();
         if (observation == null || observation.length() <= maxChars) {

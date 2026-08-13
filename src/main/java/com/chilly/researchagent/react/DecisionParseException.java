@@ -24,6 +24,7 @@ public class DecisionParseException extends RuntimeException {
         return rawTextPreview;
     }
 
+    /** 组装含长度与短预览的错误消息，避免完整原文进入日志。 */
     private static String formatMessage(String message, String rawText) {
         if (rawText == null || rawText.isBlank()) {
             return message;
@@ -32,6 +33,7 @@ public class DecisionParseException extends RuntimeException {
         return message + " (raw length=" + rawText.length() + ", preview=" + shortPreview + ")";
     }
 
+    /** 生成供 {@link #getRawTextPreview()} 返回的较长预览。 */
     private static String preview(String rawText) {
         if (rawText == null || rawText.isBlank()) {
             return "";
@@ -39,6 +41,7 @@ public class DecisionParseException extends RuntimeException {
         return truncate(rawText, DecisionConstants.RAW_TEXT_PREVIEW_LIMIT);
     }
 
+    /** 截断文本并在超出 limit 时追加省略号。 */
     private static String truncate(String text, int limit) {
         return text.length() > limit ? text.substring(0, limit) + "..." : text;
     }

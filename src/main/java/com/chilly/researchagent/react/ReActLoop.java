@@ -16,10 +16,20 @@ public class ReActLoop {
 
     private final ReActStepExecutor stepExecutor;
     private final AgentProperties agentProperties;
+    private final ReActTraceLogger traceLogger;
 
-    public ReActLoop(ReActStepExecutor stepExecutor, AgentProperties agentProperties) {
+    /**
+     * @param stepExecutor      单步执行器
+     * @param agentProperties   max-steps 与 total-timeout 配置
+     * @param traceLogger       结构化追踪日志
+     */
+    public ReActLoop(
+            ReActStepExecutor stepExecutor,
+            AgentProperties agentProperties,
+            ReActTraceLogger traceLogger) {
         this.stepExecutor = stepExecutor;
         this.agentProperties = agentProperties;
+        this.traceLogger = traceLogger;
     }
 
     /**
@@ -28,12 +38,16 @@ public class ReActLoop {
     public ReActResult run(String userQuestion) {
         ReActContext context = new ReActContext(userQuestion);
         long startedAt = System.currentTimeMillis();
+        traceLogger.logRunStart(userQuestion);
 
         for (int step = 1; step <= agentProperties.maxSteps(); step++) {
             if (System.currentTimeMillis() - startedAt > agentProperties.totalTimeoutMs()) {
-                return new ReActResult(TOTAL_TIMEOUT_MESSAGE, context.steps(), TerminatedReason.TOTAL_TIMEOUT);
+                ReActResult result = new ReActResult(TOTAL_TIMEOUT_MESSAGE, context.steps(), TerminatedReason.TOTAL_TIMEOUT);
+                traceLogger.logRunEnd(result, System.currentTimeMillis() - startedAt);
+                return result;
             }
 
+            context.setLoopStep(step);
             try {
                 StepResult result = stepExecutor.executeOneStep(context);
                 if (result instanceof StepResult.Finished finished) {
@@ -44,7 +58,9 @@ public class ReActLoop {
                             null,
                             finished.answer(),
                             Instant.now()));
-                    return new ReActResult(finished.answer(), context.steps(), TerminatedReason.LLM_FINISH);
+                    ReActResult reactResult = new ReActResult(finished.answer(), context.steps(), TerminatedReason.LLM_FINISH);
+                    traceLogger.logRunEnd(reactResult, System.currentTimeMillis() - startedAt);
+                    return reactResult;
                 }
 
                 StepResult.Continue continued = (StepResult.Continue) result;
@@ -56,10 +72,15 @@ public class ReActLoop {
                         continued.observation(),
                         Instant.now()));
             } catch (StepTimeoutException | DecisionParseException | DuplicateToolCallException e) {
-                return new ReActResult(e.getMessage(), context.steps(), TerminatedReason.ERROR);
+                traceLogger.logRunError(step, e.getMessage());
+                ReActResult result = new ReActResult(e.getMessage(), context.steps(), TerminatedReason.ERROR);
+                traceLogger.logRunEnd(result, System.currentTimeMillis() - startedAt);
+                return result;
             }
         }
 
-        return new ReActResult(MAX_STEPS_MESSAGE, context.steps(), TerminatedReason.MAX_STEPS);
+        ReActResult result = new ReActResult(MAX_STEPS_MESSAGE, context.steps(), TerminatedReason.MAX_STEPS);
+        traceLogger.logRunEnd(result, System.currentTimeMillis() - startedAt);
+        return result;
     }
 }

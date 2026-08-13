@@ -40,7 +40,8 @@ class ReActStepExecutorTest {
                 toolRegistry,
                 decisionParser,
                 promptBuilder,
-                defaultAgentProperties());
+                defaultAgentProperties(),
+                ReActTraceLogger.forTests());
     }
 
     /** LLM 返回 finish 时应直接结束。 */
@@ -61,7 +62,8 @@ class ReActStepExecutorTest {
     void returnsContinueWithTruncatedObservationWhenCallingTool() {
         AgentProperties properties = new AgentProperties(10, 30_000L, 90_000L, 10, AgentProperties.DEFAULT_SYSTEM_PROMPT_PATH);
         executor = new ReActStepExecutor(
-                gatewayChatService, toolRegistry, decisionParser, promptBuilder, properties);
+                gatewayChatService, toolRegistry, decisionParser, promptBuilder, properties,
+                ReActTraceLogger.forTests());
 
         when(toolRegistry.listAllTools()).thenReturn(List.of());
         when(gatewayChatService.chat(any(), any(), any())).thenReturn("""
@@ -82,7 +84,8 @@ class ReActStepExecutorTest {
     void throwsStepTimeoutWhenToolCallExceedsTimeout() {
         AgentProperties properties = new AgentProperties(10, 100L, 90_000L, 2000, AgentProperties.DEFAULT_SYSTEM_PROMPT_PATH);
         executor = new ReActStepExecutor(
-                gatewayChatService, toolRegistry, decisionParser, promptBuilder, properties);
+                gatewayChatService, toolRegistry, decisionParser, promptBuilder, properties,
+                ReActTraceLogger.forTests());
 
         when(toolRegistry.listAllTools()).thenReturn(List.of());
         when(gatewayChatService.chat(any(), any(), any())).thenReturn("""

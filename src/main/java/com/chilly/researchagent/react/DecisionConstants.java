@@ -11,6 +11,7 @@ public final class DecisionConstants {
     /** 异常 message 中附带的短预览字符数。 */
     public static final int MESSAGE_PREVIEW_LIMIT = 50;
 
+    /** 禁止实例化。 */
     private DecisionConstants() {
     }
 }
