@@ -1,6 +1,7 @@
 package com.chilly.researchagent.react;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -19,13 +20,18 @@ public class AgentDecisionParser {
     private static final Pattern MARKDOWN_JSON_BLOCK =
             Pattern.compile("```(?:json)?\\s*(.*?)\\s*```", Pattern.DOTALL);
 
+    private static final Pattern LENIENT_FINISH =
+            Pattern.compile("\"action\"\\s*:\\s*\"finish\"\\s*,\\s*\"answer\"\\s*:\\s*\"(.*)\"\\s*}\\s*$",
+                    Pattern.DOTALL);
+
     private final ObjectMapper objectMapper;
 
     /**
-     * @param objectMapper JSON 反序列化器
+     * @param objectMapper JSON 反序列化器（会复制并启用对 LLM 常见非标准 JSON 的容错）
      */
     public AgentDecisionParser(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper.copy()
+                .enable(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature());
     }
 
     /**
@@ -35,12 +41,24 @@ public class AgentDecisionParser {
         if (rawText == null || rawText.isBlank()) {
             throw new DecisionParseException("LLM output is empty", rawText, null);
         }
+        String json = extractJson(rawText);
         try {
-            Map<String, Object> map = objectMapper.readValue(extractJson(rawText), new TypeReference<>() {});
-            return toDecision(map, rawText);
-        } catch (JsonProcessingException e) {
-            throw new DecisionParseException("Invalid JSON in LLM output", rawText, e);
+            return toDecision(readJsonMap(json), rawText);
+        } catch (JsonProcessingException first) {
+            try {
+                return toDecision(readJsonMap(escapeControlCharsInJsonStrings(json)), rawText);
+            } catch (JsonProcessingException second) {
+                AgentDecision lenient = tryParseLenientFinish(json, rawText);
+                if (lenient != null) {
+                    return lenient;
+                }
+                throw new DecisionParseException("Invalid JSON in LLM output", rawText, second);
+            }
         }
+    }
+
+    private Map<String, Object> readJsonMap(String json) throws JsonProcessingException {
+        return objectMapper.readValue(json, new TypeReference<>() {});
     }
 
     /**
@@ -96,6 +114,67 @@ public class AgentDecisionParser {
             return text.substring(start, end + 1);
         }
         return text;
+    }
+
+    /**
+     * LLM 常在 answer 字符串里直接换行而未写成 {@code \\n}；将字符串内部的控制字符转义后再解析。
+     */
+    private static String escapeControlCharsInJsonStrings(String json) {
+        StringBuilder sanitized = new StringBuilder(json.length() + 32);
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    sanitized.append(c);
+                    escaped = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    sanitized.append(c);
+                    escaped = true;
+                } else if (c == '"') {
+                    sanitized.append(c);
+                    inString = false;
+                } else if (c == '\n') {
+                    sanitized.append("\\n");
+                } else if (c == '\r') {
+                    sanitized.append("\\r");
+                } else if (c == '\t') {
+                    sanitized.append("\\t");
+                } else {
+                    sanitized.append(c);
+                }
+                continue;
+            }
+            sanitized.append(c);
+            if (c == '"') {
+                inString = true;
+            }
+        }
+        return sanitized.toString();
+    }
+
+    /** 标准 JSON 解析仍失败时，尝试从 finish 决策中直接提取 answer 文本。 */
+    private AgentDecision tryParseLenientFinish(String json, String rawText) {
+        Matcher matcher = LENIENT_FINISH.matcher(json.trim());
+        if (!matcher.matches()) {
+            return null;
+        }
+        String answer = unescapeJsonString(matcher.group(1));
+        if (answer.isBlank()) {
+            throw new DecisionParseException("finish action requires non-blank 'answer'", rawText, null);
+        }
+        return new AgentDecision(AgentDecision.ACTION_FINISH, null, null, answer);
+    }
+
+    private static String unescapeJsonString(String value) {
+        return value.replace("\\n", "\n")
+                .replace("\\r", "\r")
+                .replace("\\t", "\t")
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\");
     }
 
     /**

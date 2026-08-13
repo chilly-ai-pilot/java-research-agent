@@ -142,6 +142,34 @@ class AgentDecisionParserTest {
         assertThat(decision.paramAsString("query")).contains("什么是\"MCP\"？");
     }
 
+    /** finish 的 answer 含未转义换行（LLM 常见输出）应能解析。 */
+    @Test
+    void parsesFinishWithUnescapedNewlinesInAnswer() {
+        AgentDecision decision = parser.parse("""
+                {"action":"finish","answer":"根据搜索结果，我为你整理了关于**注意力机制**：
+
+                ## 什么是注意力机制
+
+                注意力机制是一种让模型动态关注重要部分的技术。"}
+                """);
+
+        assertThat(decision.isFinish()).isTrue();
+        assertThat(decision.answer()).contains("注意力机制");
+        assertThat(decision.answer()).contains("## 什么是注意力机制");
+    }
+
+    /** finish 的 answer 含 markdown 与多段落时应完整保留。 */
+    @Test
+    void parsesFinishWithMarkdownMultilineAnswer() {
+        String raw = """
+                {"action":"finish","answer":"## 标题\\n\\n- 要点一\\n- 要点二"}
+                """;
+        AgentDecision decision = parser.parse(raw.replace("\\n", "\n"));
+
+        assertThat(decision.answer()).contains("要点一");
+        assertThat(decision.answer()).contains("要点二");
+    }
+
     /** 超长原始文本在 getRawTextPreview() 中应截断到 500 字符。 */
     @Test
     void truncatesRawTextTo500CharsInException() {

@@ -21,7 +21,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
@@ -40,8 +40,8 @@ import static org.mockito.Mockito.verify;
 class MultiTurnScenarioTest {
 
     private static final String SESSION_ID = "mem-test-1";
-    private static final String TURN1_QUESTION = "帮我查一下 Transformer";
-    private static final String TURN2_QUESTION = "刚才提到的注意力机制再详细讲一下";
+    private static final String TURN1_QUESTION = "帮我上网搜一下注意力机制";
+    private static final String TURN2_QUESTION = "刚才提到的再详细讲一下";
 
     @Autowired
     private ReActLoop reActLoop;
@@ -59,12 +59,16 @@ class MultiTurnScenarioTest {
         clearInvocations(gatewayChatService);
     }
 
-    /** Turn 1 检索 + Turn 2 指代追问：history 含 Turn 1 QA，答案提及注意力机制。 */
+    /** Turn 1 上网查注意力机制 + Turn 2 指代追问：history 含 Turn 1 QA，答案展开同一话题。 */
     @Test
     void sameSessionTurn2UsesTurn1HistoryAndExplainsAttention() {
         ReActResult turn1 = reActLoop.run(SESSION_ID, TURN1_QUESTION);
-        assertThat(ReActScenarioSupport.usedKnowledgeTool(turn1)).isTrue();
+        assertThat(ReActScenarioSupport.usedTool(turn1, "web_search")).isTrue();
         assertThat(turn1.finalAnswer()).isNotBlank();
+        assertThat(turn1.finalAnswer().toLowerCase())
+                .satisfiesAnyOf(
+                        answer -> assertThat(answer).contains("注意力"),
+                        answer -> assertThat(answer).contains("attention"));
 
         clearInvocations(gatewayChatService);
 
@@ -74,9 +78,14 @@ class MultiTurnScenarioTest {
                 .satisfiesAnyOf(
                         answer -> assertThat(answer).contains("注意力"),
                         answer -> assertThat(answer).contains("attention"));
+        assertThat(turn2.finalAnswer()).doesNotContain("并没有详细讲解");
+        assertThat(turn2.finalAnswer()).doesNotContain("之前没讲过");
 
         ArgumentCaptor<List<Message>> historyCaptor = ArgumentCaptor.forClass(List.class);
-        verify(gatewayChatService, atLeastOnce()).chat(any(), historyCaptor.capture(), eq(TURN2_QUESTION));
+        verify(gatewayChatService, atLeastOnce()).chat(
+                any(),
+                historyCaptor.capture(),
+                argThat(prompt -> prompt.contains(TURN2_QUESTION)));
 
         List<Message> turn2History = historyCaptor.getAllValues().getFirst();
         assertThat(turn2History).hasSize(2);
@@ -96,7 +105,10 @@ class MultiTurnScenarioTest {
         reActLoop.run("mem-test-2", TURN2_QUESTION);
 
         ArgumentCaptor<List<Message>> historyCaptor = ArgumentCaptor.forClass(List.class);
-        verify(gatewayChatService, atLeastOnce()).chat(any(), historyCaptor.capture(), eq(TURN2_QUESTION));
+        verify(gatewayChatService, atLeastOnce()).chat(
+                any(),
+                historyCaptor.capture(),
+                argThat(prompt -> prompt.contains(TURN2_QUESTION)));
 
         assertThat(historyCaptor.getAllValues().getFirst()).isEmpty();
     }
